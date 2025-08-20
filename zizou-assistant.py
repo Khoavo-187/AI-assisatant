@@ -266,7 +266,7 @@ h3 {
 </style>
 """, unsafe_allow_html=True)
 
-client = genai.configure(
+client = genai.client(
     api_key="AIzaSyDCug_95N5QwzPhF_HqTU7S8KYgJQhDO0Y"
 )
 
