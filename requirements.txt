@@ -3,3 +3,4 @@ pygame
 SpeechRecognition
 google-genai
 plotly
+gTTS
