@@ -1,8 +1,4 @@
-
-
-
 from gtts import gTTS
-import pygame
 from google import genai
 from google.genai import types
 import speech_recognition
@@ -12,9 +8,8 @@ import os
 from PIL import Image
 import base64
 import io
-import threading
-import time
 import wave
+import time
 
 # Enhanced page configuration
 st.set_page_config(
@@ -172,29 +167,6 @@ h3 {
     margin: 10px 5px;
 }
 
-/* Spinner styling */
-.stSpinner {
-    color: #3498db;
-}
-
-/* Code block styling */
-.stCode {
-    background: rgba(0,0,0,0.3);
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.2);
-}
-
-/* Metric styling */
-.metric-container {
-    background: linear-gradient(135deg, rgba(52, 152, 219, 0.2), rgba(46, 204, 113, 0.2));
-    border-radius: 15px;
-    padding: 20px;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.1);
-    text-align: center;
-    margin: 10px 0;
-}
-
 /* Chat bubble styling */
 .user-message {
     background: linear-gradient(45deg, #3498db, #2980b9);
@@ -234,6 +206,16 @@ h3 {
     100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
 }
 
+/* Audio player styling */
+.stAudio {
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 10px;
+    margin: 10px 0;
+}
+
 /* Voice wave animation */
 .voice-wave {
     display: inline-block;
@@ -258,25 +240,42 @@ h3 {
     50% { height: 5px; }
 }
 
-/* Sidebar enhancements */
-.sidebar-header {
-    background: linear-gradient(45deg, #3498db, #2ecc71);
-    padding: 20px;
+/* Enhanced audio player */
+.audio-container {
+    background: linear-gradient(45deg, rgba(52, 152, 219, 0.1), rgba(46, 204, 113, 0.1));
     border-radius: 15px;
-    margin-bottom: 20px;
-    text-align: center;
+    padding: 20px;
+    margin: 15px 0;
+    border: 1px solid rgba(255,255,255,0.2);
+    backdrop-filter: blur(10px);
+}
+
+.download-link {
+    background: linear-gradient(45deg, #3498db, #2ecc71);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 500;
+    display: inline-block;
+    margin: 10px 5px;
+    transition: all 0.3s ease;
+}
+
+.download-link:hover {
+    background: linear-gradient(45deg, #2980b9, #27ae60);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
 }
 </style>
 """, unsafe_allow_html=True)
 
+# Initialize Gemini client
 client = genai.Client(
     api_key="AIzaSyDCug_95N5QwzPhF_HqTU7S8KYgJQhDO0Y"
 )
 
-# Initialize pygame mixer properly
-pygame.mixer.pre_init(frequency=44200, size=-16, channels=2, buffer=1024)
-pygame.mixer.init()
-
+# NO PYGAME INITIALIZATION - Fully removed for Streamlit Cloud compatibility
 robot_ear = speech_recognition.Recognizer()
 robot_brain = "" 
 
@@ -383,13 +382,13 @@ def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):
         wf.setframerate(rate)
         wf.writeframes(pcm)
 
-def speak_with_gemini_voice(text, voice_name="Kore"):
-    """Enhanced TTS using Gemini's voice options"""
+def speak_with_gemini_voice(text, voice_name="Kore", auto_play=True):
+    """Enhanced TTS using Gemini's voice options - Streamlit Compatible"""
     try:
         # Clean text for speech
         clean_text = text.replace("*", "").replace("#", "").strip()
         if not clean_text:
-            return False
+            return False, None
             
         # Generate speech using Gemini with selected voice
         response = client.models.generate_content(
@@ -410,41 +409,38 @@ def speak_with_gemini_voice(text, voice_name="Kore"):
         # Extract audio data
         audio_data = response.candidates[0].content.parts[0].inline_data.data
         
-        # Use temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
-            wave_file(tmp_file.name, audio_data)
-            temp_path = tmp_file.name
+        if auto_play:
+            # Create temporary file and use Streamlit audio player with autoplay
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                wave_file(tmp_file.name, audio_data)
+                temp_path = tmp_file.name
+            
+            # Display audio player with enhanced styling
+            st.markdown('<div class="audio-container">', unsafe_allow_html=True)
+            st.markdown(f"🎵 **Playing with {voice_name} voice:**")
+            
+            with open(temp_path, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+                st.audio(audio_bytes, format='audio/wav', autoplay=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Cleanup
+            os.unlink(temp_path)
         
-        # Play with pygame
-        pygame.mixer.quit()
-        pygame.mixer.pre_init(frequency=44200, size=-16, channels=1, buffer=1024)
-        pygame.mixer.init()
-        
-        pygame.mixer.music.load(temp_path)
-        pygame.mixer.music.set_volume(0.8)
-        pygame.mixer.music.play()
-        
-        # Wait for playback to complete
-        while pygame.mixer.music.get_busy():
-            pygame.time.wait(100)
-        
-        # Cleanup
-        pygame.mixer.music.stop()
-        os.unlink(temp_path)
-        
-        return True
+        return True, audio_data
         
     except Exception as e:
         st.error(f"🔊 Lỗi phát âm thanh với {voice_name} voice: {e}")
         # Fallback to gTTS if voice fails
-        return speak_with_gtts_fallback(text)
+        return speak_with_gtts_fallback(text, auto_play)
 
-def speak_with_gtts_fallback(text):
-    """Fallback TTS using gTTS"""
+def speak_with_gtts_fallback(text, auto_play=True):
+    """Fallback TTS using gTTS - Streamlit Compatible"""
     try:
         clean_text = text.replace("*", "").replace("#", "").strip()
         if not clean_text:
-            return False
+            return False, None
             
         tts = gTTS(
             text=clean_text,
@@ -457,25 +453,80 @@ def speak_with_gtts_fallback(text):
             tts.save(tmp_file.name)
             temp_path = tmp_file.name
         
-        pygame.mixer.quit()
-        pygame.mixer.pre_init(frequency=88400, size=-16, channels=2, buffer=1024)
-        pygame.mixer.init()
+        if auto_play:
+            # Display audio player with enhanced styling
+            st.markdown('<div class="audio-container">', unsafe_allow_html=True)
+            st.markdown("🎵 **Playing with Vietnamese gTTS:**")
+            
+            with open(temp_path, 'rb') as audio_file:
+                audio_bytes = audio_file.read()
+                st.audio(audio_bytes, format='audio/mp3', autoplay=True)
+                
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        pygame.mixer.music.load(temp_path)
-        pygame.mixer.music.set_volume(0.8)
-        pygame.mixer.music.play()
+        # Read audio data for return
+        with open(temp_path, 'rb') as audio_file:
+            audio_data = audio_file.read()
         
-        while pygame.mixer.music.get_busy():
-            pygame.time.wait(100)
-        
-        pygame.mixer.music.stop()
+        # Cleanup
         os.unlink(temp_path)
-        
-        return True
+        return True, audio_data
         
     except Exception as e:
         st.error(f"🔊 Lỗi fallback TTS: {e}")
-        return False
+        return False, None
+
+def create_downloadable_audio(text, voice_name="Kore", filename_prefix="zizou_audio"):
+    """Create downloadable audio file with download link"""
+    try:
+        clean_text = text.replace("*", "").replace("#", "").strip()
+        if not clean_text:
+            return None
+            
+        voice_info = VOICE_OPTIONS.get(voice_name, VOICE_OPTIONS["Kore (Gemini TTS)"])
+        
+        if voice_info["model"] == "gtts":
+            # Use gTTS
+            tts = gTTS(text=clean_text, lang="vi", slow=False, tld="com.au")
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                tts.save(tmp_file.name)
+                with open(tmp_file.name, 'rb') as audio_file:
+                    audio_data = audio_file.read()
+                os.unlink(tmp_file.name)
+            
+            # Create download link
+            b64 = base64.b64encode(audio_data).decode()
+            filename = f"{filename_prefix}_Vietnamese.mp3"
+            href = f'<a href="data:audio/mp3;base64,{b64}" download="{filename}" class="download-link">📥 Download Audio (Vietnamese gTTS)</a>'
+        else:
+            # Use Gemini TTS
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-tts",
+                contents=clean_text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=voice_info["voice"],
+                            )
+                        )
+                    ),
+                )
+            )
+            
+            audio_data = response.candidates[0].content.parts[0].inline_data.data
+            
+            # Create download link
+            b64 = base64.b64encode(audio_data).decode()
+            filename = f"{filename_prefix}_{voice_info['voice']}.wav"
+            href = f'<a href="data:audio/wav;base64,{b64}" download="{filename}" class="download-link">📥 Download Audio ({voice_info["voice"]})</a>'
+        
+        return audio_data, href
+        
+    except Exception as e:
+        st.error(f"🔊 Lỗi tạo audio download: {e}")
+        return None
 
 def process_response_tone(response_text):
     """Add gentle tone markers to the response"""
@@ -562,6 +613,29 @@ def analyze_file_content(file_content, file_name, user_question="", personality=
     except Exception as e:
         return f"Lỗi phân tích file: {str(e)}"
 
+def display_chat_history():
+    """Display chat history with enhanced styling"""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    if st.session_state.chat_history:
+        st.markdown("### 📜 Lịch sử trò chuyện")
+        for i, (user_msg, bot_msg, timestamp) in enumerate(st.session_state.chat_history[-5:]):  # Show last 5
+            st.markdown(f'<div class="user-message">👤 <strong>Bạn ({timestamp}):</strong><br>{user_msg}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="assistant-message">🤖 <strong>Zizou:</strong><br>{bot_msg}</div>', unsafe_allow_html=True)
+
+def add_to_chat_history(user_msg, bot_msg):
+    """Add conversation to chat history"""
+    if 'chat_history' not in st.session_state:
+        st.session_state.chat_history = []
+    
+    timestamp = time.strftime("%H:%M")
+    st.session_state.chat_history.append((user_msg, bot_msg, timestamp))
+    
+    # Keep only last 20 conversations
+    if len(st.session_state.chat_history) > 20:
+        st.session_state.chat_history = st.session_state.chat_history[-20:]
+
 # Streamlit interface
 def streamlit_interface():
     # Header with status indicator
@@ -572,12 +646,13 @@ def streamlit_interface():
             <span class="status-online"></span>
             <span style="color: #ecf0f1; font-size: 1.1rem; font-weight: 500;">Online & Ready to Help</span>
         </div>
+        <p style="color: #bdc3c7; margin-top: 10px;">🎵 Audio plays directly in your browser - Cloud compatible!</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Sidebar configuration
     with st.sidebar:
-        st.markdown('<div class="sidebar-header"><h2>🎛️ Cấu hình</h2></div>', unsafe_allow_html=True)
+        st.markdown('<div style="background: linear-gradient(45deg, #3498db, #2ecc71); padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center;"><h2>🎛️ Cấu hình</h2></div>', unsafe_allow_html=True)
         
         # Personality selection
         st.markdown("### 🎭 Tính cách AI")
@@ -602,28 +677,53 @@ def streamlit_interface():
         # Display voice description
         st.info(f"ℹ️ {VOICE_OPTIONS[voice_option]['description']}")
         
-        # Volume control
-        st.markdown("### 🎚️ Âm lượng")
-        volume = st.slider("Âm lượng:", 0, 100, 80, help="Điều chỉnh âm lượng phát")
+        # Audio mode selection
+        st.markdown("### 🎵 Chế độ âm thanh")
+        audio_mode = st.radio(
+            "Chọn cách phát âm thanh:",
+            ["Auto-play (Tự động)", "Manual play (Thủ công)", "Download only (Chỉ tải về)"],
+            index=0,
+            help="Auto-play có thể bị chặn bởi trình duyệt"
+        )
         
-        # Stats
-        st.markdown("### 📊 Thống kê")
+        # Enhanced stats with session info
+        st.markdown("### 📊 Thống kê phiên")
+        if 'chat_history' not in st.session_state:
+            st.session_state.chat_history = []
+        
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Phiên", "1", delta="Active")
+            st.metric("Tin nhắn", len(st.session_state.chat_history), delta="📝")
         with col2:
             st.metric("Trạng thái", "Online", delta="✅")
+        
+        # System info
+        st.markdown("### 🌐 Thông tin hệ thống")
+        st.success("✅ Streamlit Cloud Compatible")
+        st.info("🔊 Audio plays via st.audio()")
+        st.info("🎯 No pygame dependencies")
+        
+        if audio_mode == "Auto-play (Tự động)":
+            st.warning("⚠️ Some browsers block autoplay")
+        
+        # Clear history button
+        if st.button("🗑️ Xóa lịch sử chat", use_container_width=True):
+            st.session_state.chat_history = []
+            st.rerun()
     
     # Store configurations in session state
     st.session_state.personality = personality
     st.session_state.voice_option = voice_option
-    st.session_state.volume = volume / 100
+    st.session_state.audio_mode = audio_mode
     
     # Create tabs with enhanced styling
-    tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🖼️ Hình ảnh", "📁 File", "🎤 Voice"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🖼️ Hình ảnh", "📄 File", "🎤 Voice"])
     
     with tab1:
         st.markdown("### 💬 Trò chuyện với Zizou")
+        
+        # Display chat history first
+        display_chat_history()
         
         # Chat input
         user_input = st.text_area(
@@ -642,28 +742,53 @@ def streamlit_interface():
                         response = get_zizou_response(user_input, personality)
                         response = process_response_tone(response)
                         
-                        # Display conversation in chat format
+                        # Add to chat history
+                        add_to_chat_history(user_input, response)
+                        
+                        # Display current conversation in chat format
                         st.markdown(f'<div class="user-message">👤 <strong>Bạn:</strong><br>{user_input}</div>', unsafe_allow_html=True)
                         st.markdown(f'<div class="assistant-message">🤖 <strong>Zizou ({PERSONALITY_CONFIGS[personality]["name"]}):</strong><br>{response}</div>', unsafe_allow_html=True)
                         
                         st.session_state.last_response = response
+                        
+                        # Auto-play if enabled
+                        if audio_mode == "Auto-play (Tự động)":
+                            voice_info = VOICE_OPTIONS[voice_option]
+                            with st.spinner("🎵 Đang phát âm thanh..."):
+                                if voice_info["model"] == "gtts":
+                                    speak_with_gtts_fallback(response, auto_play=True)
+                                else:
+                                    speak_with_gemini_voice(response, voice_info["voice"], auto_play=True)
                 else:
                     st.warning("⚠️ Vui lòng nhập câu hỏi!")
         
         with col2:
             if st.button("🔊 Nghe câu trả lời", use_container_width=True):
                 if hasattr(st.session_state, 'last_response'):
-                    with st.spinner("🎵 Đang phát âm thanh..."):
+                    with st.spinner("🎵 Đang tạo âm thanh..."):
                         voice_info = VOICE_OPTIONS[voice_option]
-                        if voice_info["model"] == "gtts":
-                            success = speak_with_gtts_fallback(st.session_state.last_response)
-                        else:
-                            success = speak_with_gemini_voice(st.session_state.last_response, voice_info["voice"])
                         
-                        if success:
-                            st.success("✅ Đã phát xong!")
+                        if audio_mode == "Download only (Chỉ tải về)":
+                            # Create download link only
+                            result = create_downloadable_audio(
+                                st.session_state.last_response, 
+                                voice_option,
+                                "chat_response"
+                            )
+                            if result:
+                                audio_data, download_link = result
+                                st.markdown(download_link, unsafe_allow_html=True)
                         else:
-                            st.error("❌ Không thể phát âm thanh")
+                            # Play audio
+                            if voice_info["model"] == "gtts":
+                                success, _ = speak_with_gtts_fallback(st.session_state.last_response, auto_play=True)
+                            else:
+                                success, _ = speak_with_gemini_voice(st.session_state.last_response, voice_info["voice"], auto_play=True)
+                            
+                            if success:
+                                st.success("✅ Đã tạo âm thanh!")
+                            else:
+                                st.error("❌ Không thể tạo âm thanh")
                 else:
                     st.warning("⚠️ Chưa có câu trả lời để phát!")
         
@@ -706,29 +831,44 @@ def streamlit_interface():
                         st.write(analysis)
                         
                         st.session_state.last_image_response = analysis
+                        
+                        # Add to chat history
+                        question_text = f"[Phân tích hình ảnh] {image_question}" if image_question else "[Phân tích hình ảnh]"
+                        add_to_chat_history(question_text, analysis)
                 
                 if st.button("🔊 Nghe phân tích", use_container_width=True):
                     if hasattr(st.session_state, 'last_image_response'):
-                        with st.spinner("🎵 Đang phát âm thanh..."):
+                        with st.spinner("🎵 Đang tạo âm thanh..."):
                             voice_info = VOICE_OPTIONS[voice_option]
-                            if voice_info["model"] == "gtts":
-                                success = speak_with_gtts_fallback(st.session_state.last_image_response)
-                            else:
-                                success = speak_with_gemini_voice(st.session_state.last_image_response, voice_info["voice"])
                             
-                            if success:
-                                st.success("✅ Đã phát xong!")
+                            if audio_mode == "Download only (Chỉ tải về)":
+                                result = create_downloadable_audio(
+                                    st.session_state.last_image_response, 
+                                    voice_option,
+                                    "image_analysis"
+                                )
+                                if result:
+                                    audio_data, download_link = result
+                                    st.markdown(download_link, unsafe_allow_html=True)
+                            else:
+                                if voice_info["model"] == "gtts":
+                                    success, _ = speak_with_gtts_fallback(st.session_state.last_image_response, auto_play=True)
+                                else:
+                                    success, _ = speak_with_gemini_voice(st.session_state.last_image_response, voice_info["voice"], auto_play=True)
+                                
+                                if success:
+                                    st.success("✅ Đã phát xong!")
                     else:
                         st.warning("⚠️ Chưa có phân tích để phát!")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
     
     with tab3:
-        st.markdown("### 📁 Phân tích File")
+        st.markdown("### 📄 Phân tích File")
         
         uploaded_files = st.file_uploader(
             "📄 Tải lên file:",
-            type=['txt', 'py', 'html', 'css', 'js', 'json', 'csv'],
+            type=['txt', 'py', 'html', 'css', 'js', 'json', 'csv', 'md'],
             accept_multiple_files=True,
             help="Zizou có thể đọc và phân tích code, text files"
         )
@@ -755,8 +895,13 @@ def streamlit_interface():
                         file_content = uploaded_file.read().decode("utf-8")
                         
                         # Show preview based on file type
-                        if uploaded_file.name.endswith(('.py', '.html', '.css', '.js', '.json')):
-                            st.code(file_content[:800] + "..." if len(file_content) > 800 else file_content)
+                        if uploaded_file.name.endswith(('.py', '.html', '.css', '.js', '.json', '.md')):
+                            language = uploaded_file.name.split('.')[-1]
+                            if language == 'py':
+                                language = 'python'
+                            elif language == 'js':
+                                language = 'javascript'
+                            st.code(file_content[:800] + "..." if len(file_content) > 800 else file_content, language=language)
                         else:
                             st.text_area(f"Nội dung preview:", file_content[:500] + "..." if len(file_content) > 500 else file_content, height=200, key=f"preview_{uploaded_file.name}")
                         
@@ -783,6 +928,10 @@ def streamlit_interface():
                                 
                                 st.session_state[f'file_response_{uploaded_file.name}'] = analysis
                                 
+                                # Add to chat history
+                                question_text = f"[Phân tích file: {uploaded_file.name}] {file_question}" if file_question else f"[Phân tích file: {uploaded_file.name}]"
+                                add_to_chat_history(question_text, analysis)
+                                
                             except Exception as e:
                                 st.error(f"❌ Lỗi: {e}")
                     
@@ -791,13 +940,24 @@ def streamlit_interface():
                         if response_key in st.session_state:
                             with st.spinner("🎵 Đang phát..."):
                                 voice_info = VOICE_OPTIONS[voice_option]
-                                if voice_info["model"] == "gtts":
-                                    success = speak_with_gtts_fallback(st.session_state[response_key])
-                                else:
-                                    success = speak_with_gemini_voice(st.session_state[response_key], voice_info["voice"])
                                 
-                                if success:
-                                    st.success("✅ Phát xong!")
+                                if audio_mode == "Download only (Chỉ tải về)":
+                                    result = create_downloadable_audio(
+                                        st.session_state[response_key], 
+                                        voice_option,
+                                        f"file_analysis_{uploaded_file.name}"
+                                    )
+                                    if result:
+                                        audio_data, download_link = result
+                                        st.markdown(download_link, unsafe_allow_html=True)
+                                else:
+                                    if voice_info["model"] == "gtts":
+                                        success, _ = speak_with_gtts_fallback(st.session_state[response_key], auto_play=True)
+                                    else:
+                                        success, _ = speak_with_gemini_voice(st.session_state[response_key], voice_info["voice"], auto_play=True)
+                                    
+                                    if success:
+                                        st.success("✅ Phát xong!")
                         else:
                             st.warning("⚠️ Chưa có phân tích!")
                     
@@ -832,9 +992,9 @@ def streamlit_interface():
                 
                 with st.spinner("🎵 Đang test giọng nói..."):
                     if voice_info["model"] == "gtts":
-                        success = speak_with_gtts_fallback(test_text)
+                        success, _ = speak_with_gtts_fallback(test_text, auto_play=True)
                     else:
-                        success = speak_with_gemini_voice(test_text, voice_info["voice"])
+                        success, _ = speak_with_gemini_voice(test_text, voice_info["voice"], auto_play=True)
                     
                     if success:
                         st.success("✅ Giọng nói hoạt động tốt!")
@@ -848,7 +1008,7 @@ def streamlit_interface():
                 **🎛️ Cấu hình hiện tại:**
                 - Tính cách: {PERSONALITY_CONFIGS[personality]['name']}
                 - Giọng nói: {voice_option}
-                - Âm lượng: {int(st.session_state.volume * 100)}%
+                - Chế độ audio: {audio_mode}
                 """)
         
         # Voice chat interface
@@ -874,6 +1034,9 @@ def streamlit_interface():
                         response = get_zizou_response(voice_input, personality)
                         response = process_response_tone(response)
                         
+                        # Add to chat history
+                        add_to_chat_history(f"[Voice] {voice_input}", response)
+                        
                         # Show conversation in chat bubbles
                         st.markdown(f'<div class="user-message">👤 <strong>Bạn nói:</strong><br>{voice_input}</div>', unsafe_allow_html=True)
                         st.markdown(f'<div class="assistant-message">🤖 <strong>Zizou ({PERSONALITY_CONFIGS[personality]["name"]}):</strong><br>{response}</div>', unsafe_allow_html=True)
@@ -882,10 +1045,14 @@ def streamlit_interface():
                         with st.spinner(f"🎵 Zizou đang nói với giọng {voice_option}..."):
                             voice_info = VOICE_OPTIONS[voice_option]
                             if voice_info["model"] == "gtts":
-                                speak_with_gtts_fallback(response)
+                                success, _ = speak_with_gtts_fallback(response, auto_play=True)
                             else:
-                                speak_with_gemini_voice(response, voice_info["voice"])
-                            st.success("✅ Zizou đã trả lời!")
+                                success, _ = speak_with_gemini_voice(response, voice_info["voice"], auto_play=True)
+                            
+                            if success:
+                                st.success("✅ Zizou đã trả lời!")
+                            else:
+                                st.warning("⚠️ Có vấn đề với âm thanh")
             
             # Enhanced info box
             st.markdown(f"""
@@ -896,10 +1063,12 @@ def streamlit_interface():
                     <li>🚀 Click "Gửi" để Zizou trả lời</li>
                     <li>🔊 Zizou sẽ tự động nói câu trả lời với giọng <strong>{voice_option}</strong></li>
                     <li>🎭 Phong cách trả lời: <strong>{PERSONALITY_CONFIGS[personality]['name']}</strong></li>
+                    <li>🎵 Chế độ audio: <strong>{audio_mode}</strong></li>
                 </ul>
                 
                 <h4>💡 Để sử dụng microphone thực:</h4>
-                <p style="color: #bdc3c7;">Chạy script trong terminal: <code>python test.py</code></p>
+                <p style="color: #bdc3c7;">Cần cài đặt thêm các thư viện: <code>pip install pyaudio speechrecognition</code></p>
+                <p style="color: #bdc3c7;">Và chạy script trong terminal với microphone support</p>
                 
                 <h4>🎵 {voice_option} Features:</h4>
                 <p style="color: #ecf0f1;">{VOICE_OPTIONS[voice_option]['description']}</p>
@@ -934,22 +1103,33 @@ def streamlit_interface():
             # Requirements section
             with st.expander("🔧 Yêu cầu kỹ thuật", expanded=False):
                 st.code("""
-# Cài đặt thư viện cần thiết:
-pip install gtts pygame google-generativeai speechrecognition streamlit pillow pyaudio wave
+# Cài đặt thư viện cần thiết (Streamlit Cloud compatible):
+pip install gtts google-generativeai speechrecognition streamlit pillow wave
 
 # Chạy ứng dụng:
-streamlit run your_app.py
+streamlit run zizou_app.py
 
-# Voice chat thực với microphone:
-python your_app.py
+# Lưu ý: 
+# - Không cần pygame (đã thay bằng st.audio)
+# - Hoạt động tốt trên Streamlit Cloud
+# - Audio được phát qua trình duyệt
                 """, language="bash")
 
-# Console version for real voice chat
+
+# Console version for real voice chat (optional)
 def main_console():
-    """Console version with real microphone support and multiple voices"""
+    """Console version with real microphone support - requires pyaudio"""
     print("🤖 Zizou đang khởi động với đa giọng nói AI... Xin chào bạn!")
     print("💡 Tip: Nói 'tạm biệt' hoặc 'bye' để thoát")
     print("🔊 Voice: Sử dụng Gemini AI voices chất lượng cao")
+    print("⚠️  Lưu ý: Version này cần microphone và pyaudio")
+    
+    try:
+        import pyaudio
+    except ImportError:
+        print("❌ Cần cài đặt: pip install pyaudio")
+        print("💡 Hoặc sử dụng Streamlit version: streamlit run zizou_app.py")
+        return
     
     # Voice selection in console
     print("\n🎵 Chọn giọng nói:")
@@ -988,6 +1168,7 @@ def main_console():
         print(f"⚠️ Sử dụng tính cách mặc định: Chuyên nghiệp")
     
     print(f"\n🚀 Bắt đầu voice chat với {selected_voice} - {PERSONALITY_CONFIGS[selected_personality]['name']}")
+    print("📌 Streamlit version không cần console - chạy: streamlit run zizou_app.py")
     
     while True:
         try:
@@ -1004,20 +1185,12 @@ def main_console():
             except speech_recognition.UnknownValueError:
                 error_msg = "😅 Tôi không nghe rõ. Nói lại được không?"
                 print(f"🤖 Zizou: {error_msg}")
-                voice_info = VOICE_OPTIONS[selected_voice]
-                if voice_info["model"] == "gtts":
-                    speak_with_gtts_fallback(error_msg)
-                else:
-                    speak_with_gemini_voice(error_msg, voice_info["voice"])
+                # Console version would need pygame or other audio library here
+                # For Streamlit Cloud compatibility, we removed pygame
                 continue
             except speech_recognition.RequestError:
                 error_msg = "🔧 Có vấn đề kết nối. Thử lại nhé."
                 print(f"🤖 Zizou: {error_msg}")
-                voice_info = VOICE_OPTIONS[selected_voice]
-                if voice_info["model"] == "gtts":
-                    speak_with_gtts_fallback(error_msg)
-                else:
-                    speak_with_gemini_voice(error_msg, voice_info["voice"])
                 continue
             
             if not you:
@@ -1029,11 +1202,6 @@ def main_console():
             if "tạm biệt" in you.lower() or "bye" in you.lower():
                 goodbye_msg = "Tạm biệt! Hẹn gặp lại! 🌟"
                 print(f"🤖 Zizou: {goodbye_msg}")
-                voice_info = VOICE_OPTIONS[selected_voice]
-                if voice_info["model"] == "gtts":
-                    speak_with_gtts_fallback(goodbye_msg)
-                else:
-                    speak_with_gemini_voice(goodbye_msg, voice_info["voice"])
                 break
             
             # Generate response
@@ -1041,13 +1209,7 @@ def main_console():
             robot_brain = process_response_tone(robot_brain)
             
             print(f"🤖 Zizou ({PERSONALITY_CONFIGS[selected_personality]['name']}): {robot_brain}")
-            
-            # Speak with selected voice
-            voice_info = VOICE_OPTIONS[selected_voice]
-            if voice_info["model"] == "gtts":
-                speak_with_gtts_fallback(robot_brain)
-            else:
-                speak_with_gemini_voice(robot_brain, voice_info["voice"])
+            print("💡 Audio playback requires Streamlit interface")
             
         except KeyboardInterrupt:
             print("\n👋 Tạm biệt!")
@@ -1055,10 +1217,13 @@ def main_console():
         except Exception as e:
             print(f"❌ Lỗi: {e}")
 
+
 if __name__ == "__main__":
     try:
         # Check if running in Streamlit
         streamlit_interface()
     except:
-        # Run console version
+        # Run console version (limited functionality without pygame)
+        print("🎯 Khuyến nghị: Chạy với Streamlit để có đầy đủ tính năng")
+        print("📌 Command: streamlit run zizou_app.py")
         main_console()
