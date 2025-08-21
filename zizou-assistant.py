@@ -600,8 +600,8 @@ def get_zizou_response(user_input, personality="professional"):
 def analyze_file_content(file_content, file_name, user_question="", personality="professional"):
     """Analyze file content with Zizou"""
     try:
-        prompt = f"Phân tích file '{file_name}' với nội dung:\n\n{file_content[:3000]}"
-        if len(file_content) > 3000:
+        prompt = f"Phân tích file '{file_name}' với nội dung:\n\n{file_content[:8000]}"
+        if len(file_content) > 8000:
             prompt += "\n\n[File bị cắt ngắn do quá dài]"
         
         if user_question:
@@ -901,9 +901,9 @@ def streamlit_interface():
                                 language = 'python'
                             elif language == 'js':
                                 language = 'javascript'
-                            st.code(file_content[:800] + "..." if len(file_content) > 800 else file_content, language=language)
+                            st.code(file_content[:1200] + "..." if len(file_content) > 12000 else file_content, language=language)
                         else:
-                            st.text_area(f"Nội dung preview:", file_content[:500] + "..." if len(file_content) > 500 else file_content, height=200, key=f"preview_{uploaded_file.name}")
+                            st.text_area(f"Nội dung preview:", file_content[:1000] + "..." if len(file_content) > 1000 else file_content, height=200, key=f"preview_{uploaded_file.name}")
                         
                         # Reset file pointer for analysis
                         uploaded_file.seek(0)
