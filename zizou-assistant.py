@@ -272,7 +272,7 @@ h3 {
 
 # Initialize Gemini client
 client = genai.Client(
-    api_key="AIzaSyDCug_95N5QwzPhF_HqTU7S8KYgJQhDO0Y"
+    api_key="AIzaSyDezy5JL7pr53eDNEF2BDnFGnIUrZsdWpM"
 )
 
 # NO PYGAME INITIALIZATION - Fully removed for Streamlit Cloud compatibility
@@ -453,20 +453,16 @@ def speak_with_gtts_fallback(text, auto_play=True):
             tts.save(tmp_file.name)
             temp_path = tmp_file.name
         
+        # Read audio data
+        with open(temp_path, 'rb') as audio_file:
+            audio_data = audio_file.read()
+        
         if auto_play:
             # Display audio player with enhanced styling
             st.markdown('<div class="audio-container">', unsafe_allow_html=True)
             st.markdown("🎵 **Playing with Vietnamese gTTS:**")
-            
-            with open(temp_path, 'rb') as audio_file:
-                audio_bytes = audio_file.read()
-                st.audio(audio_bytes, format='audio/mp3', autoplay=True)
-                
+            st.audio(audio_data, format='audio/mp3', autoplay=True)
             st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Read audio data for return
-        with open(temp_path, 'rb') as audio_file:
-            audio_data = audio_file.read()
         
         # Cleanup
         os.unlink(temp_path)
@@ -1041,36 +1037,157 @@ def streamlit_interface():
                         st.markdown(f'<div class="user-message">👤 <strong>Bạn nói:</strong><br>{voice_input}</div>', unsafe_allow_html=True)
                         st.markdown(f'<div class="assistant-message">🤖 <strong>Zizou ({PERSONALITY_CONFIGS[personality]["name"]}):</strong><br>{response}</div>', unsafe_allow_html=True)
                         
+                        # Store response for voice playback
+                        st.session_state.last_voice_response = response
+                        
                         # Auto-play response with selected voice
-                        with st.spinner(f"🎵 Zizou đang nói với giọng {voice_option}..."):
-                            voice_info = VOICE_OPTIONS[voice_option]
+                        st.markdown("🎵 **Zizou đang trả lời bằng giọng nói:**")
+                        voice_info = VOICE_OPTIONS[voice_option]
+                        
+                        try:
                             if voice_info["model"] == "gtts":
-                                success, _ = speak_with_gtts_fallback(response, auto_play=True)
+                                success, audio_data = speak_with_gtts_fallback(response, auto_play=False)
+                                if success and audio_data:
+                                    st.audio(audio_data, format='audio/mp3', autoplay=True)
+                                    st.success("✅ Zizou đã trả lời bằng giọng Vietnamese!")
                             else:
-                                success, _ = speak_with_gemini_voice(response, voice_info["voice"], auto_play=True)
-                            
-                            if success:
-                                st.success("✅ Zizou đã trả lời!")
-                            else:
-                                st.warning("⚠️ Có vấn đề với âm thanh")
+                                success, audio_data = speak_with_gemini_voice(response, voice_info["voice"], auto_play=False)
+                                if success and audio_data:
+                                    # Create temporary file for st.audio
+                                    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                        wave_file(tmp_file.name, audio_data)
+                                        with open(tmp_file.name, 'rb') as f:
+                                            audio_bytes = f.read()
+                                        st.audio(audio_bytes, format='audio/wav', autoplay=True)
+                                        os.unlink(tmp_file.name)
+                                    st.success(f"✅ Zizou đã trả lời bằng giọng {voice_info['voice']}!")
+                        except Exception as audio_error:
+                            st.error(f"🔊 Lỗi phát âm thanh: {audio_error}")
+                            st.info("💡 Bạn có thể thử giọng nói khác hoặc chế độ manual")
+                        
+                        # Clear input after successful send
+                        st.session_state.voice_sim = ""
+                        st.rerun()
+                else:
+                    st.warning("⚠️ Vui lòng nhập tin nhắn!")
             
-            # Enhanced info box
+            # Manual replay button for last voice response
+            if hasattr(st.session_state, 'last_voice_response'):
+                st.markdown("---")
+                col_a, col_b = st.columns(2)
+                
+                with col_a:
+                    if st.button("🔄 Phát lại câu trả lời", key="replay_voice", use_container_width=True):
+                        with st.spinner("🎵 Đang phát lại..."):
+                            voice_info = VOICE_OPTIONS[voice_option]
+                            
+                            try:
+                                if voice_info["model"] == "gtts":
+                                    success, audio_data = speak_with_gtts_fallback(st.session_state.last_voice_response, auto_play=False)
+                                    if success and audio_data:
+                                        st.audio(audio_data, format='audio/mp3', autoplay=True)
+                                else:
+                                    success, audio_data = speak_with_gemini_voice(st.session_state.last_voice_response, voice_info["voice"], auto_play=False)
+                                    if success and audio_data:
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                            wave_file(tmp_file.name, audio_data)
+                                            with open(tmp_file.name, 'rb') as f:
+                                                audio_bytes = f.read()
+                                            st.audio(audio_bytes, format='audio/wav', autoplay=True)
+                                            os.unlink(tmp_file.name)
+                                
+                                st.success("🔊 Đã phát lại!")
+                            except Exception as e:
+                                st.error(f"Lỗi phát lại: {e}")
+                
+                with col_b:
+                    if st.button("📥 Tải về audio", key="download_voice", use_container_width=True):
+                        result = create_downloadable_audio(
+                            st.session_state.last_voice_response, 
+                            voice_option,
+                            "voice_chat_response"
+                        )
+                        if result:
+                            audio_data, download_link = result
+                            st.markdown(download_link, unsafe_allow_html=True)
+            
+            # Debug section for troubleshooting
+            with st.expander("🔧 Debug & Troubleshooting", expanded=False):
+                st.markdown("**🔍 Kiểm tra hệ thống:**")
+                
+                # Test basic audio generation
+                if st.button("🧪 Test Audio Generation", key="test_audio_gen"):
+                    test_text = "Đây là test audio. Nếu bạn nghe được thì hệ thống hoạt động tốt."
+                    st.write(f"📝 Test text: {test_text}")
+                    
+                    try:
+                        voice_info = VOICE_OPTIONS[voice_option]
+                        if voice_info["model"] == "gtts":
+                            st.write("🔄 Đang test gTTS...")
+                            success, audio_data = speak_with_gtts_fallback(test_text, auto_play=False)
+                            if success and audio_data:
+                                st.write("✅ gTTS tạo audio thành công!")
+                                st.audio(audio_data, format='audio/mp3')
+                            else:
+                                st.write("❌ gTTS thất bại")
+                        else:
+                            st.write(f"🔄 Đang test Gemini TTS với voice {voice_info['voice']}...")
+                            success, audio_data = speak_with_gemini_voice(test_text, voice_info["voice"], auto_play=False)
+                            if success and audio_data:
+                                st.write("✅ Gemini TTS tạo audio thành công!")
+                                # Convert raw audio data to playable format
+                                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
+                                    wave_file(tmp_file.name, audio_data)
+                                    with open(tmp_file.name, 'rb') as f:
+                                        audio_bytes = f.read()
+                                    st.audio(audio_bytes, format='audio/wav')
+                                    os.unlink(tmp_file.name)
+                            else:
+                                st.write("❌ Gemini TTS thất bại")
+                    except Exception as e:
+                        st.error(f"Debug error: {e}")
+                
+                # System info
+                st.markdown("**ℹ️ System Info:**")
+                st.code(f"""
+Voice Option: {voice_option}
+Voice Model: {VOICE_OPTIONS[voice_option]['model']}
+Voice Name: {VOICE_OPTIONS[voice_option]['voice']}
+Audio Mode: {audio_mode}
+Personality: {PERSONALITY_CONFIGS[personality]['name']}
+Chat History: {len(st.session_state.chat_history) if 'chat_history' in st.session_state else 0} messages
+                """)
+                
+                if st.button("🔄 Reset All Sessions", key="reset_all"):
+                    # Clear all session state
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.success("✅ Đã reset tất cả!")
+                    st.rerun()
             st.markdown(f"""
             <div style="background: rgba(52, 152, 219, 0.1); border-radius: 15px; padding: 20px; margin: 20px 0;">
                 <h4>📋 Hướng dẫn Voice Chat:</h4>
                 <ul style="color: #ecf0f1;">
-                    <li>🎯 Nhập tin nhắn vào ô bên trên (giả lập voice input)</li>
+                    <li>🎯 Nhập tin nhắn vào ô bên trên</li>
                     <li>🚀 Click "Gửi" để Zizou trả lời</li>
-                    <li>🔊 Zizou sẽ tự động nói câu trả lời với giọng <strong>{voice_option}</strong></li>
-                    <li>🎭 Phong cách trả lời: <strong>{PERSONALITY_CONFIGS[personality]['name']}</strong></li>
-                    <li>🎵 Chế độ audio: <strong>{audio_mode}</strong></li>
+                    <li>🔊 Zizou sẽ tự động phát âm thanh qua st.audio()</li>
+                    <li>🎭 Phong cách: <strong>{PERSONALITY_CONFIGS[personality]['name']}</strong></li>
+                    <li>🎵 Giọng nói: <strong>{voice_option}</strong></li>
+                    <li>📱 Chế độ: <strong>{audio_mode}</strong></li>
+                </ul>
+                
+                <h4>🔧 Khắc phục sự cố:</h4>
+                <ul style="color: #bdc3c7;">
+                    <li>❗ Nếu không nghe thấy âm thanh: Kiểm tra loa/tai nghe</li>
+                    <li>🔇 Browser chặn autoplay: Thử chế độ "Manual play"</li>
+                    <li>📱 Mobile: Một số trình duyệt mobile hạn chế autoplay</li>
+                    <li>🎛️ Thử giọng nói khác nếu có lỗi</li>
                 </ul>
                 
                 <h4>💡 Để sử dụng microphone thực:</h4>
-                <p style="color: #bdc3c7;">Cần cài đặt thêm các thư viện: <code>pip install pyaudio speechrecognition</code></p>
-                <p style="color: #bdc3c7;">Và chạy script trong terminal với microphone support</p>
+                <p style="color: #bdc3c7;">Cần cài đặt: <code>pip install pyaudio speechrecognition</code></p>
                 
-                <h4>🎵 {voice_option} Features:</h4>
+                <h4>🎵 {voice_option}:</h4>
                 <p style="color: #ecf0f1;">{VOICE_OPTIONS[voice_option]['description']}</p>
             </div>
             """, unsafe_allow_html=True)
