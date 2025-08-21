@@ -1,5 +1,4 @@
-import os
-os.environ["SDL_AUDIODRIVER"] = "dummy"
+
 
 
 from gtts import gTTS
